@@ -1,9 +1,14 @@
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.crypto import get_random_string
-from device_manager.models import Device  # Assuming you have a Device model
-from django.http import HttpResponse
 import json
+
+from django.http import JsonResponse
+from django.utils.crypto import get_random_string
+from django.views.decorators.csrf import csrf_exempt
+from swapper import load_model
+
+from device_manager.models import Device
+
+OrganizationConfigSettings = load_model('config', 'OrganizationConfigSettings')
+
 
 @csrf_exempt
 def register_device(request):
@@ -12,15 +17,24 @@ def register_device(request):
         mac_address = data.get('mac_address')
         secret_key = data.get('secret_key')
 
-        # Verify the secret key matches (you may want to use environment variable for security)
-        if secret_key != "123":
+        organizations = OrganizationConfigSettings.objects.filter(shared_secret=secret_key)
+
+        # Verify the secret key matches
+        if not organizations.exists():
             return JsonResponse({'error': 'Invalid secret key'}, status=403)
 
+        organization_settings = organizations.first()
+
+        if organization_settings.registration_enabled != 1:
+            return JsonResponse({'error': 'Registration for this organization is not enabled!'}, status=403)
+
         # Check if device already exists
-        device, created = Device.objects.get_or_create(mac_address=mac_address)
+        device, created = Device.objects.get_or_create(mac_address=mac_address, defaults={
+            'organization_id': organization_settings.organization_id  # Use organization_id here
+        })
 
         if created:
-            device.device_key = get_random_string(32)  # Generate a random key for the device
+            device.device_key = get_random_string(32)
             device.save()
 
         return JsonResponse({'id': device.id, 'key': device.device_key})
