@@ -3,36 +3,39 @@ import json
 from channels.generic.websocket import WebsocketConsumer
 
 from device_manager.models import Device
+import urllib.parse
 
 
 class DeviceConsumer(WebsocketConsumer):
     def __init__(self, *args, **kwargs):
-        super().__init__(args, kwargs)
+        super().__init__(*args, **kwargs)
         self.device_id = None
         self.device_key = None
 
     def connect(self):
-        self.accept()
-        self.device_id = self.scope['query_string'].decode().split("id=")[1].split("&")[0]
-        self.device_key = self.scope['query_string'].decode().split("key=")[1]
+        query_string = self.scope['query_string'].decode()
+        query_params = urllib.parse.parse_qs(query_string)
 
-        # Verify the device ID and key
-        if not self.authenticate_device(self.device_id, self.device_key):
-            # Close connection if authentication fails
-            print('close')
-            self.close()
+        self.device_id = query_params.get('id', [None])[0]
+        self.device_key = query_params.get('key', [None])[0]
+
+
+        is_authenticated = self.authenticate_device()
+
+        if not self.device_id or not self.device_key or not is_authenticated:
+            self.disconnect(301)
         else:
             self.accept()
 
-    def authenticate_device(self, device_id, device_key):
+    def authenticate_device(self):
         try:
-            device = Device.objects.get(id=device_id)
-            return device.device_key == device_key
+            device = Device.objects.get(id=self.device_id)
+            return device.device_key == self.device_key
         except Device.DoesNotExist:
             return False
 
     def disconnect(self, close_code):
-        pass
+        self.close()
 
     def receive(self, text_data):
         data = json.loads(text_data)

@@ -11,13 +11,11 @@ def register_device(request):
         data = json.loads(request.body)
         mac_address = data.get('mac_address')
         secret_key = data.get('secret_key')
-        print('data')
 
         # Verify the secret key matches (you may want to use environment variable for security)
         if secret_key != "123":
             return JsonResponse({'error': 'Invalid secret key'}, status=403)
 
-        print('key')
         # Check if device already exists
         device, created = Device.objects.get_or_create(mac_address=mac_address)
 

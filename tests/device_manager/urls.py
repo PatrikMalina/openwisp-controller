@@ -1,7 +1,8 @@
 from django.urls import path
 from . import views
 
+app_name = 'device_manager'
+
 urlpatterns = [
-    path('test/', views.hello_view, name='hello_view'),
-    path('', views.hello_view, name='hello_view'),
+    path('', views.home, name='home'),
 ]
