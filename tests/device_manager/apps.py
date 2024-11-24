@@ -1,5 +1,4 @@
 from django.apps import AppConfig
-from django.urls import reverse
 from openwisp_utils.admin_theme.menu import register_menu_group
 
 
@@ -12,7 +11,7 @@ class DeviceManagerConfig(AppConfig):
             position=21,
             config={
                 "label": "Custom clients",
-                "url": "http://localhost:8000/device_manager",
+                "url": "http://192.168.3.129:8000/device_manager",
                 "icon": "link-icon",
             },
 

@@ -4,5 +4,53 @@
 {% block title %}Device Manager{% endblock %}
 
 {% block content %}
+    <h1>Connected Devices</h1>
+    <table border="1">
+        <thead>
+        <tr>
+            <th>Device ID</th>
+            <th>Status</th>
+        </tr>
+        </thead>
+        <tbody id="device-table-body">
+        <!-- Rows will be dynamically added here -->
+        </tbody>
+    </table>
 
+    <script>
+        const tableBody = document.getElementById('device-table-body');
+        const socket = new WebSocket(`ws://${window.location.host}/ws/device/?id=0&key=0`);
+        console.log('Connected socket')
+
+        function updateDeviceStatus(data) {
+            const existingRow = document.querySelector(`#device-${data.id}`);
+
+            if (data.status === 'connected') {
+                if (!existingRow) {
+                    const newRow = document.createElement('tr');
+                    newRow.id = `device-${data.id}`;
+                    newRow.innerHTML = `
+                    <td>${data.id}</td>
+                    <td>${data.status}</td>
+                `;
+                    tableBody.appendChild(newRow);
+                } else {
+                    existingRow.querySelector('td:last-child').textContent = data.status;
+                }
+            } else if (data.status === 'disconnected') {
+                if (existingRow) {
+                    tableBody.removeChild(existingRow);
+                }
+            }
+        }
+
+        socket.onmessage = function (event) {
+            console.log('Received WebSocket message');
+            const message = JSON.parse(event.data);
+
+            if (message.command === "status") {
+                updateDeviceStatus(message.data)
+            }
+        };
+    </script>
 {% endblock %}

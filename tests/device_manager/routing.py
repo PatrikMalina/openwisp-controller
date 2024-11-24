@@ -1,7 +1,7 @@
 from django.urls import re_path
 
-from . import consumer
+from .consumer import DeviceConsumer
 
 websocket_urlpatterns = [
-   re_path(r"ws/device/?$", consumer.DeviceConsumer.as_asgi()),
+    re_path(r"ws/device/?$", DeviceConsumer.as_asgi()),
 ]
