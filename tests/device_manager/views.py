@@ -29,6 +29,7 @@ def device_detail(request, device_id):
 
     return render(request, 'device_manager/device_detail.html', {
         'device': device,
+        'device_id': device.id,
         'title': f"Device {device.id} Details",
         'site_title': site_title
     })

@@ -10,6 +10,29 @@ from device_manager.models import Device
 connected_devices_cache = set()
 
 
+def broad_cast_message(data):
+    async_to_sync(get_channel_layer().group_send)(
+        "connected_devices",
+        {
+            "type": "send_message",
+            "message": data
+        }
+    )
+
+
+def get_connected_devices():
+    return [
+        {"id": device, "status": "connected"}
+        for device in list(connected_devices_cache)
+    ]
+
+
+def send_current_devices_status():
+    connected_devices = get_connected_devices()
+
+    broad_cast_message({"command": "connected_devices", "data": connected_devices})
+
+
 class DeviceConsumer(WebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -28,7 +51,7 @@ class DeviceConsumer(WebsocketConsumer):
             async_to_sync(get_channel_layer().group_add)("connected_devices", self.channel_name)
 
             # Send list of currently connected devices
-            self.send_current_devices_status()
+            send_current_devices_status()
 
         else:
             is_authenticated = self.authenticate_device()
@@ -63,8 +86,14 @@ class DeviceConsumer(WebsocketConsumer):
         try:
             message = json.loads(text_data)
 
-            if message.get("command") == "device_info":
+            if message.get("type") == "broadcast":
+                broad_cast_message(message)
+
+            elif message.get("command") == "device_info":
                 self.send_current_device_metrics(message.get("data"))
+
+            else:
+                print("Received command: ", message.get("command"))
 
         except json.JSONDecodeError:
             print("Failed to decode JSON message.")
@@ -72,24 +101,7 @@ class DeviceConsumer(WebsocketConsumer):
     def send_current_device_metrics(self, data):
         data["id"] = self.device_id
 
-        async_to_sync(get_channel_layer().group_send)(
-            "connected_devices",
-            {
-                "type": "send_message",
-                "message": {"command": "device_metrics", "data": data}
-            }
-        )
-
-    def send_current_devices_status(self):
-        connected_devices = self.get_connected_devices()
-
-        async_to_sync(get_channel_layer().group_send)(
-            "connected_devices",
-            {
-                "type": "send_message",
-                "message": {"command": "connected_devices", "data": connected_devices}
-            }
-        )
+        broad_cast_message({"command": "device_metrics", "data": data})
 
     def notify_device_status(self, status):
         device_info = {
@@ -97,21 +109,8 @@ class DeviceConsumer(WebsocketConsumer):
             "status": status
         }
 
-        # Send the update to the WebSocket group
-        async_to_sync(get_channel_layer().group_send)(
-            "connected_devices",
-            {
-                "type": "send_message",
-                "message": {"command": "status", "data": device_info}
-            }
-        )
+        broad_cast_message({"command": "status", "data": device_info})
 
     # Handle messages in the WebSocket group
     def send_message(self, event):
         self.send(text_data=json.dumps(event["message"]))
-
-    def get_connected_devices(self):
-        return [
-            {"id": device, "status": "connected"}
-            for device in list(connected_devices_cache)
-        ]

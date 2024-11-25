@@ -55,6 +55,8 @@
         const table = document.querySelector('table');
         const numberOfHeaders = table.querySelectorAll('th').length;
         const emptyCells = '<td></td>'.repeat(numberOfHeaders - 2);
+        
+        const commandsToIgnore = ["script_log"]
 
         const socket = new WebSocket(`ws://${window.location.host}/ws/device/?id=0&key=0`);
 
@@ -101,9 +103,21 @@
                 }
             }
         }
-
-        socket.onmessage = function (event) {
+        
+        socket.onopen = () => {
+            console.log('WebSocket connection established.');
+        }
+        
+        socket.onerror = () => {
+            console.error('WebSocket error:', error);
+        }
+        
+        socket.onmessage = (event) => {
             const message = JSON.parse(event.data);
+            
+            if (commandsToIgnore.includes(message.command)) {
+                return
+            }
 
             switch (message.command) {
                 case "status":
