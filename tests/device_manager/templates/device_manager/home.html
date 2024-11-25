@@ -1,0 +1,126 @@
+{% extends "admin/base_site.html" %}
+{% load i18n l10n admin_urls static %}
+
+
+
+{% block content %}
+    <div class="results">
+        <table id="result_list">
+            <thead>
+            <tr>
+                <th scope="col" class="sortable">
+                    <div class="text">Device ID</div>
+                    <div class="clear"></div>
+                </th>
+                <th scope="col" class="sortable">
+                    <div class="text">CPU Load</div>
+                    <div class="clear"></div>
+                </th>
+                <th scope="col" class="sortable">
+                    <div class="text">RAM Usage %</div>
+                    <div class="clear"></div>
+                </th>
+                <th scope="col" class="sortable">
+                    <div class="text">Disk Read MB/s</div>
+                    <div class="clear"></div>
+                </th>
+                <th scope="col" class="sortable">
+                    <div class="text">Disk Write MB/s</div>
+                    <div class="clear"></div>
+                </th>
+                <th scope="col" class="sortable">
+                    <div class="text">B/s ⬆</div>
+                    <div class="clear"></div>
+                </th>
+                <th scope="col" class="sortable">
+                    <div class="text">B/s ⬇</div>
+                    <div class="clear"></div>
+                </th>
+                <th scope="col" class="sortable">
+                    <div class="text">Status</div>
+                    <div class="clear"></div>
+                </th>
+            </tr>
+            </thead>
+            <tbody id="device-table-body">
+            <!-- Rows will be dynamically added here -->
+            </tbody>
+        </table>
+    </div>
+
+
+
+    <script>
+        const tableBody = document.getElementById('device-table-body');
+        const table = document.querySelector('table');
+        const numberOfHeaders = table.querySelectorAll('th').length;
+        const emptyCells = '<td></td>'.repeat(numberOfHeaders - 2);
+
+        const socket = new WebSocket(`ws://${window.location.host}/ws/device/?id=0&key=0`);
+
+        function createNewRow(data) {
+            const newRow = document.createElement('tr');
+            newRow.id = `device-${data.id}`;
+            newRow.innerHTML = `
+            <td><a href="device/id=${data.id}" style="color: #df5d43;">Device ${data.id}</a> </td>
+            ${emptyCells}
+            <td>Connected</td>`;
+
+            return newRow
+        }
+
+        function updateDeviceStatus(data) {
+            const existingRow = document.querySelector(`#device-${data.id}`);
+
+            if (data.status === 'connected') {
+                if (!existingRow) {
+                    tableBody.appendChild(createNewRow(data));
+                } else {
+                    existingRow.querySelector('td:last-child').textContent = 'Connected';
+                }
+            } else if (data.status === 'disconnected') {
+                if (existingRow) {
+                    tableBody.removeChild(existingRow);
+                }
+            }
+        }
+
+        function loadInitialStatus(data) {
+            data.forEach(device => updateDeviceStatus(device))
+        }
+
+        function updateDeviceMetrics(data) {
+            const existingRow = document.querySelector(`#device-${data.id}`);
+
+            if (existingRow) {
+                const cells = existingRow.getElementsByTagName('td');
+
+                const keys = Object.keys(data);
+                for (let i = 1; i < keys.length; i++) {
+                    cells[i].innerHTML = data[keys[i - 1]]
+                }
+            }
+        }
+
+        socket.onmessage = function (event) {
+            const message = JSON.parse(event.data);
+
+            switch (message.command) {
+                case "status":
+                    updateDeviceStatus(message.data)
+                    break
+                case "connected_devices":
+                    loadInitialStatus(message.data)
+                    break
+
+                case "device_metrics":
+                    updateDeviceMetrics(message.data)
+                    break
+
+                default:
+                    console.log('Received WebSocket command: ', message.command);
+
+            }
+        };
+    </script>
+{% endblock %}

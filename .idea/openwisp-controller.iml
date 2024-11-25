@@ -29,6 +29,7 @@
     <option name="TEMPLATE_FOLDERS">
       <list>
         <option value="$MODULE_DIR$/openwisp_controller/pki/templates" />
+        <option value="$MODULE_DIR$/tests/device_manager/templates" />
       </list>
     </option>
   </component>
