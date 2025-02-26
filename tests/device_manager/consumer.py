@@ -10,7 +10,7 @@ from device_manager.models import Device
 connected_devices_cache = set()
 
 
-def broad_cast_message(data):
+def broadcast_message(data):
     async_to_sync(get_channel_layer().group_send)(
         "connected_devices",
         {
@@ -30,7 +30,7 @@ def get_connected_devices():
 def send_current_devices_status():
     connected_devices = get_connected_devices()
 
-    broad_cast_message({"command": "connected_devices", "data": connected_devices})
+    broadcast_message({"command": "connected_devices", "data": connected_devices})
 
 
 class DeviceConsumer(WebsocketConsumer):
@@ -87,7 +87,7 @@ class DeviceConsumer(WebsocketConsumer):
             message = json.loads(text_data)
 
             if message.get("type") == "broadcast":
-                broad_cast_message(message)
+                broadcast_message(message)
 
             elif message.get("command") == "device_info":
                 self.send_current_device_metrics(message.get("data"))
@@ -101,7 +101,7 @@ class DeviceConsumer(WebsocketConsumer):
     def send_current_device_metrics(self, data):
         data["id"] = self.device_id
 
-        broad_cast_message({"command": "device_metrics", "data": data})
+        broadcast_message({"command": "device_metrics", "data": data})
 
     def notify_device_status(self, status):
         device_info = {
@@ -109,7 +109,7 @@ class DeviceConsumer(WebsocketConsumer):
             "status": status
         }
 
-        broad_cast_message({"command": "status", "data": device_info})
+        broadcast_message({"command": "status", "data": device_info})
 
     # Handle messages in the WebSocket group
     def send_message(self, event):

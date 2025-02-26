@@ -1,5 +1,7 @@
 import json
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.http import JsonResponse
 from django.utils.crypto import get_random_string
 from django.views.decorators.csrf import csrf_exempt
@@ -36,6 +38,17 @@ def register_device(request):
         if created:
             device.device_key = get_random_string(32)
             device.save()
+
+            message = {
+                "command": "new_device",
+                "data": {
+                    "id": device.id
+                }
+            }
+            async_to_sync(get_channel_layer().group_send)(
+                "connected_devices",  # WebSocket group name
+                {"type": "send_message", "message": message}
+            )
 
         return JsonResponse({'id': device.id, 'key': device.device_key})
     else:
