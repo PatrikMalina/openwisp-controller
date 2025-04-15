@@ -16,7 +16,7 @@ class ContentTypeAdmin(admin.ModelAdmin):
 
 
 class LabExerciseDeviceInlineForm(forms.ModelForm):
-    device = forms.ChoiceField(
+    device_selector = forms.ChoiceField(
         required=True,
         label="Device",
     )
@@ -41,7 +41,20 @@ class LabExerciseDeviceInlineForm(forms.ModelForm):
             openwisp_devices
         ]
 
-        self.fields['device'].choices = custom + openwisp
+        self.fields['device_selector'].choices = custom + openwisp
+
+    def clean(self):
+        cleaned_data = super().clean()
+        selected = cleaned_data.get('device_selector')
+        if selected:
+            kind, id_str = selected.split('_')
+            model = Device if kind == "custom" else OpenWISPDevice
+            obj = model.objects.get(id=id_str)
+            content_type = ContentType.objects.get_for_model(model)
+
+            cleaned_data['object_id'] = obj.id
+            cleaned_data['content_type'] = content_type
+        return cleaned_data
 
 
 class LabExerciseDeviceInline(GenericTabularInline):
