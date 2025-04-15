@@ -7,11 +7,11 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.test import TestCase, TransactionTestCase
 from netjsonconfig import OpenWrt
+from netjsonconfig.exceptions import ValidationError as NetjsonconfigValidationError
 from swapper import load_model
 
 from openwisp_utils.tests import catch_signal
 
-from ...tests.utils import TransactionTestMixin
 from .. import settings as app_settings
 from ..signals import config_modified, config_status_changed
 from ..tasks import logger as task_logger
@@ -78,7 +78,7 @@ class TestTemplate(CreateConfigTemplateMixin, TestVpnX509Mixin, TestCase):
         org = self._get_org()
         c = self._create_config(organization=org)
         self.assertEqual(c.templates.count(), 0)
-        c.device.delete()
+        c.device.delete(check_deactivated=False)
         # create default templates for different backends
         t1 = self._create_template(
             name='default-openwrt', backend='netjsonconfig.OpenWrt', default=True
@@ -355,7 +355,10 @@ class TestTemplate(CreateConfigTemplateMixin, TestVpnX509Mixin, TestCase):
             template_qs = Template.objects.filter(type='vpn')
             self.assertEqual(template_qs.count(), 1)
             t = template_qs.first()
-            self.assertDictContainsSubset(_original_context, t.get_context())
+            context = t.get_context()
+            # check all items from original context exist in template context
+            for key, value in _original_context.items():
+                self.assertEqual(context.get(key), value)
             self.assertEqual(app_settings.CONTEXT, _original_context)
 
         with self.subTest(
@@ -500,9 +503,22 @@ class TestTemplate(CreateConfigTemplateMixin, TestVpnX509Mixin, TestCase):
         # {'__all__': ['VPN client with this Config and Vpn already exists.']}
         self.assertIsNotNone(vpn_client)
 
+    def test_regression_preventing_from_fixing_invalid_conf(self):
+        template = self._create_template()
+        # create a template with an invalid configuration
+        Template.objects.update(config={'interfaces': [{'name': 'eth0', 'type': ''}]})
+        # ensure the configuration raises ValidationError
+        with self.assertRaises(NetjsonconfigValidationError):
+            template.refresh_from_db()
+            del template.backend_instance
+            template.checksum
+        del template.backend_instance
+        template.config = {'interfaces': [{'name': 'eth0', 'type': 'ethernet'}]}
+        template.full_clean()
+        template.save()
+
 
 class TestTemplateTransaction(
-    TransactionTestMixin,
     CreateConfigTemplateMixin,
     TestVpnX509Mixin,
     TransactionTestCase,
@@ -539,7 +555,7 @@ class TestTemplateTransaction(
             with catch_signal(config_status_changed) as handler:
                 t.config['interfaces'][0]['name'] = 'eth2'
                 t.full_clean()
-                with self.assertNumQueries(9):
+                with self.assertNumQueries(10):
                     t.save()
                 c.refresh_from_db()
                 handler.assert_not_called()

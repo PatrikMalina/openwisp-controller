@@ -1,11 +1,13 @@
 import json
 import logging
+from collections.abc import Iterable
 
 import reversion
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin import helpers
+from django.contrib.admin.actions import delete_selected
 from django.contrib.admin.models import ADDITION, LogEntry
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import (
@@ -19,7 +21,9 @@ from django.shortcuts import get_object_or_404
 from django.template.loader import get_template
 from django.template.response import TemplateResponse
 from django.urls import path, re_path, reverse
+from django.utils.html import format_html, mark_safe
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext_lazy
 from flat_json_widget.widgets import FlatJsonWidget
 from import_export.admin import ImportExportMixin
 from openwisp_ipam.filters import SubnetFilter
@@ -71,6 +75,30 @@ class SystemDefinedVariableMixin(object):
 
 class BaseAdmin(TimeReadonlyAdminMixin, ModelAdmin):
     history_latest_first = True
+
+
+class DeactivatedDeviceReadOnlyMixin(object):
+    def _has_permission(self, request, obj, perm):
+        if not obj or getattr(request, '_recover_view', False):
+            return perm
+        return perm and not obj.is_deactivated()
+
+    def has_add_permission(self, request, obj):
+        perm = super().has_add_permission(request, obj)
+        return self._has_permission(request, obj, perm)
+
+    def has_change_permission(self, request, obj=None):
+        perm = super().has_change_permission(request, obj)
+        return self._has_permission(request, obj, perm)
+
+    def has_delete_permission(self, request, obj=None):
+        perm = super().has_delete_permission(request, obj)
+        return self._has_permission(request, obj, perm)
+
+    def get_extra(self, request, obj=None, **kwargs):
+        if obj and obj.is_deactivated():
+            return 0
+        return super().get_extra(request, obj, **kwargs)
 
 
 class BaseConfigAdmin(BaseAdmin):
@@ -390,6 +418,7 @@ class ConfigForm(AlwaysHasChangedMixin, BaseForm):
 
 
 class ConfigInline(
+    DeactivatedDeviceReadOnlyMixin,
     MultitenantAdminMixin,
     TimeReadonlyAdminMixin,
     SystemDefinedVariableMixin,
@@ -452,6 +481,10 @@ class ChangeDeviceGroupForm(forms.Form):
 
 
 class DeviceAdmin(MultitenantAdminMixin, BaseConfigAdmin, UUIDAdmin):
+    change_form_template = 'admin/config/device/change_form.html'
+    delete_selected_confirmation_template = (
+        'admin/config/device/delete_selected_confirmation.html'
+    )
     list_display = [
         'name',
         'backend',
@@ -499,7 +532,12 @@ class DeviceAdmin(MultitenantAdminMixin, BaseConfigAdmin, UUIDAdmin):
     ]
     inlines = [ConfigInline]
     conditional_inlines = []
-    actions = ['change_group']
+    actions = [
+        'change_group',
+        'deactivate_device',
+        'activate_device',
+        'delete_selected',
+    ]
     org_position = 1 if not app_settings.HARDWARE_ID_ENABLED else 2
     list_display.insert(org_position, 'organization')
     _state_adding = False
@@ -519,6 +557,18 @@ class DeviceAdmin(MultitenantAdminMixin, BaseConfigAdmin, UUIDAdmin):
             f'{prefix}js/management_ip.js',
             f'{prefix}js/relevant_templates.js',
         ]
+
+    def has_change_permission(self, request, obj=None):
+        perm = super().has_change_permission(request)
+        if not obj or getattr(request, '_recover_view', False):
+            return perm
+        return perm and not obj.is_deactivated()
+
+    def has_delete_permission(self, request, obj=None):
+        perm = super().has_delete_permission(request)
+        if not obj:
+            return perm
+        return perm and obj.is_deactivated()
 
     def save_form(self, request, form, change):
         self._state_adding = form.instance._state.adding
@@ -624,6 +674,134 @@ class DeviceAdmin(MultitenantAdminMixin, BaseConfigAdmin, UUIDAdmin):
             request, 'admin/config/change_device_group.html', context
         )
 
+    def _get_device_path(self, device):
+        app_label = self.opts.app_label
+        model_name = self.model._meta.model_name
+        return format_html(
+            '<a href="{}">{}</a>',
+            reverse(
+                f'admin:{app_label}_{model_name}_change',
+                args=[device.id],
+            ),
+            device,
+        )
+
+    _device_status_messages = {
+        'deactivate': {
+            messages.SUCCESS: ngettext_lazy(
+                'The device %(devices_html)s was deactivated successfully.',
+                (
+                    'The following devices were deactivated successfully:'
+                    ' %(devices_html)s.'
+                ),
+                'devices',
+            ),
+            messages.ERROR: ngettext_lazy(
+                'An error occurred while deactivating the device %(devices_html)s.',
+                (
+                    'An error occurred while deactivating the following devices:'
+                    ' %(devices_html)s.'
+                ),
+                'devices',
+            ),
+        },
+        'activate': {
+            messages.SUCCESS: ngettext_lazy(
+                'The device %(devices_html)s was activated successfully.',
+                'The following devices were activated successfully: %(devices_html)s.',
+                'devices',
+            ),
+            messages.ERROR: ngettext_lazy(
+                'An error occurred while activating the device %(devices_html)s.',
+                (
+                    'An error occurred while activating the following devices:'
+                    ' %(devices_html)s.'
+                ),
+                'devices',
+            ),
+        },
+    }
+
+    def _message_user_device_status(self, request, devices, method, message_level):
+        if not devices:
+            return
+        if len(devices) == 1:
+            devices_html = devices[0]
+        else:
+            devices_html = ', '.join(devices[:-1]) + ' and ' + devices[-1]
+        message = self._device_status_messages[method][message_level]
+        self.message_user(
+            request,
+            mark_safe(
+                message % {'devices_html': devices_html, 'devices': len(devices)}
+            ),
+            message_level,
+        )
+
+    def _change_device_status(self, request, queryset, method):
+        """
+        This helper method provides re-usability of code for
+        device activation and deactivation actions.
+        """
+        success_devices = []
+        error_devices = []
+        for device in queryset.iterator():
+            try:
+                getattr(device, method)()
+            except Exception:
+                error_devices.append(self._get_device_path(device))
+            else:
+                success_devices.append(self._get_device_path(device))
+        self._message_user_device_status(
+            request, success_devices, method, messages.SUCCESS
+        )
+        self._message_user_device_status(request, error_devices, method, messages.ERROR)
+
+    @admin.action(description=_('Deactivate selected devices'), permissions=['change'])
+    def deactivate_device(self, request, queryset):
+        self._change_device_status(request, queryset, 'deactivate')
+
+    @admin.action(description=_('Activate selected devices'), permissions=['change'])
+    def activate_device(self, request, queryset):
+        self._change_device_status(request, queryset, 'activate')
+
+    @admin.action(description=delete_selected.short_description, permissions=['delete'])
+    def delete_selected(self, request, queryset):
+        response = delete_selected(self, request, queryset)
+        if not response:
+            return response
+        if 'active_devices' in response.context_data.get('perms_lacking', {}):
+            active_devices = []
+            for device in queryset.iterator():
+                if not device.is_deactivated() or (
+                    device._has_config() and not device.config.is_deactivated()
+                ):
+                    active_devices.append(self._get_device_path(device))
+            response.context_data.update(
+                {
+                    'active_devices': active_devices,
+                    'perms_lacking': set(),
+                    'title': _('Are you sure?'),
+                }
+            )
+        return response
+
+    def get_deleted_objects(self, objs, request, *args, **kwargs):
+        to_delete, model_count, perms_needed, protected = super().get_deleted_objects(
+            objs, request, *args, **kwargs
+        )
+        if (
+            isinstance(perms_needed, Iterable)
+            and len(perms_needed) == 1
+            and list(perms_needed)[0] == self.model._meta.verbose_name
+            and objs.filter(_is_deactivated=False).exists()
+        ):
+            if request.POST.get("post"):
+                perms_needed = set()
+            else:
+                perms_needed = {'active_devices'}
+        return to_delete, model_count, perms_needed, protected
+
     def get_fields(self, request, obj=None):
         """
         Do not show readonly fields in add form
@@ -642,7 +820,12 @@ class DeviceAdmin(MultitenantAdminMixin, BaseConfigAdmin, UUIDAdmin):
     ip.short_description = _('IP address')
 
     def config_status(self, obj):
-        return obj.config.status
+        if obj._has_config():
+            return obj.config.status
+        # The device does not have a related config object
+        if obj.is_deactivated():
+            return _('deactivated')
+        return _('unknown')
 
     config_status.short_description = _('config status')
 
@@ -687,6 +870,35 @@ class DeviceAdmin(MultitenantAdminMixin, BaseConfigAdmin, UUIDAdmin):
 
     def get_extra_context(self, pk=None):
         ctx = super().get_extra_context(pk)
+        if pk:
+            device = self.model.objects.select_related('config').get(id=pk)
+            ctx.update(
+                {
+                    'show_deactivate': not device.is_deactivated(),
+                    'show_activate': device.is_deactivated(),
+                    'action_checkbox_name': helpers.ACTION_CHECKBOX_NAME,
+                }
+            )
+            if device.is_deactivated():
+                ctx['additional_buttons'].append(
+                    {
+                        'raw_html': mark_safe(
+                            '<input class="default" type="submit"'
+                            f' value="{_("Activate")}" form="act_deact_device_form">'
+                        )
+                    }
+                )
+            else:
+                ctx['additional_buttons'].append(
+                    {
+                        'raw_html': mark_safe(
+                            '<p class="deletelink-box">'
+                            '<input class="deletelink" type="submit"'
+                            f' value="{_("Deactivate")}" form="act_deact_device_form">'
+                            '</p>'
+                        )
+                    }
+                )
         ctx.update(
             {
                 'relevant_template_url': reverse(
@@ -703,6 +915,21 @@ class DeviceAdmin(MultitenantAdminMixin, BaseConfigAdmin, UUIDAdmin):
     def add_view(self, request, form_url='', extra_context=None):
         extra_context = self.get_extra_context()
         return super().add_view(request, form_url, extra_context)
+
+    def recover_view(self, request, version_id, extra_context=None):
+        request._recover_view = True
+        return super().recover_view(request, version_id, extra_context)
+
+    def delete_view(self, request, object_id, extra_context=None):
+        extra_context = extra_context or {}
+        obj = self.get_object(request, object_id)
+        if obj and obj._has_config() and not obj.config.is_deactivated():
+            extra_context['deactivating_warning'] = True
+        return super().delete_view(request, object_id, extra_context)
+
+    def delete_model(self, request, obj):
+        force_delete = request.POST.get('force_delete') == 'true'
+        obj.delete(check_deactivated=not force_delete)
 
     def get_inlines(self, request, obj):
         inlines = super().get_inlines(request, obj)

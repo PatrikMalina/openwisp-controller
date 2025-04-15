@@ -10,7 +10,7 @@ Developer Installation Instructions
 Dependencies
 ------------
 
-- Python >= 3.8
+- Python >= 3.9
 - OpenSSL
 
 Installing for Development
@@ -41,7 +41,7 @@ Launch Redis and PostgreSQL:
 
 .. code-block:: shell
 
-    docker-compose up -d redis postgres
+    docker compose up -d redis postgres
 
 Setup and activate a virtual-environment (we'll be using `virtualenv
 <https://pypi.org/project/virtualenv/>`_):
@@ -64,7 +64,7 @@ Install development dependencies:
 
     pip install -e .
     pip install -r requirements-test.txt
-    sudo npm install -g jshint stylelint
+    sudo npm install -g prettier
 
 Install WebDriver for Chromium for your browser version from
 https://chromedriver.chromium.org/home and Extract ``chromedriver`` to one
@@ -92,7 +92,8 @@ Launch development server:
 
 You can access the admin interface at ``http://127.0.0.1:8000/admin/``.
 
-Run tests with:
+Run tests with (make sure you have the :ref:`selenium dependencies
+<selenium_dependencies>` installed locally first):
 
 .. code-block:: shell
 
@@ -105,9 +106,6 @@ repository <controller_dev_docker>`. Once set up, you can run these
 specific tests as follows:
 
 .. code-block:: shell
-
-    # Run database tests against PostgreSQL backend
-    POSTGRESQL=1 ./runtests.py --parallel
 
     # Run only specific selenium tests classes
     cd tests/
@@ -162,13 +160,13 @@ Build from the Dockerfile:
 
 .. code-block:: shell
 
-    docker-compose build
+    docker compose build
 
 Run the docker container:
 
 .. code-block:: shell
 
-    docker-compose up
+    docker compose up
 
 Troubleshooting Steps for Common Installation Issues
 ----------------------------------------------------

@@ -6,7 +6,6 @@ import subprocess
 from copy import deepcopy
 from subprocess import CalledProcessError, TimeoutExpired
 
-import django
 import shortuuid
 from cache_memoize import cache_memoize
 from django.core.cache import cache
@@ -634,7 +633,7 @@ class AbstractVpn(ShareableOrgMixinUniqueName, BaseConfig):
             # call auto_client and update the config
             elif self._is_backend_type('zerotier') and template_backend_class:
                 auto = getattr(template_backend_class, 'zerotier_auto_client')(
-                    name='ow_zt',
+                    name='global',
                     networks=[
                         {'id': self.network_id, 'ifname': f'owzt{self.network_id[-6:]}'}
                     ],
@@ -796,6 +795,10 @@ class AbstractVpnClient(models.Model):
     config = models.ForeignKey(
         get_model_name('config', 'Config'), on_delete=models.CASCADE
     )
+    template = models.ForeignKey(
+        get_model_name('config', 'Template'),
+        on_delete=models.CASCADE,
+    )
     vpn = models.ForeignKey(get_model_name('config', 'Vpn'), on_delete=models.CASCADE)
     cert = models.OneToOneField(
         get_model_name('django_x509', 'Cert'),
@@ -852,13 +855,9 @@ class AbstractVpnClient(models.Model):
             cls._auto_ip_stopper_funcs.append(func)
 
     def _get_unique_checks(self, exclude=None, include_meta_constraints=False):
-        if django.VERSION < (4, 1):
-            # TODO: Remove when dropping support for Django 3.2
-            unique_checks, date_checks = super()._get_unique_checks(exclude)
-        else:
-            unique_checks, date_checks = super()._get_unique_checks(
-                exclude, include_meta_constraints
-            )
+        unique_checks, date_checks = super()._get_unique_checks(
+            exclude, include_meta_constraints
+        )
 
         if not self.vpn._vxlan_vni:
             # If VNI is not specified in VXLAN tunnel configuration,

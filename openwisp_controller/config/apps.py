@@ -22,6 +22,8 @@ from openwisp_utils.admin_theme.menu import register_menu_group
 from . import settings as app_settings
 from .signals import (
     config_backend_changed,
+    config_deactivated,
+    config_deactivating,
     config_modified,
     device_group_changed,
     device_name_changed,
@@ -53,6 +55,7 @@ class ConfigConfig(AppConfig):
 
     def __setmodels__(self):
         self.device_model = load_model('config', 'Device')
+        self.template_model = load_model('config', 'Template')
         self.devicegroup_model = load_model('config', 'DeviceGroup')
         self.config_model = load_model('config', 'Config')
         self.vpn_model = load_model('config', 'Vpn')
@@ -134,9 +137,19 @@ class ConfigConfig(AppConfig):
             dispatch_uid='devicegroup_templates_change_handler.backend_changed',
         )
         pre_save.connect(
+            self.template_model.pre_save_handler,
+            sender=self.template_model,
+            dispatch_uid='template_pre_save_handler',
+        )
+        pre_save.connect(
             handlers.organization_disabled_handler,
             sender=self.org_model,
             dispatch_uid='organization_disabled_pre_save_clear_device_checksum_cache',
+        )
+        post_save.connect(
+            self.template_model.post_save_handler,
+            sender=self.template_model,
+            dispatch_uid='template_post_save_handler',
         )
         post_save.connect(
             self.org_limits.post_save_handler,
@@ -305,6 +318,18 @@ class ConfigConfig(AppConfig):
             sender=self.device_model,
             dispatch_uid='invalidate_get_device_cache',
         )
+        config_deactivated.connect(
+            self.device_model.config_deactivated_clear_management_ip,
+            dispatch_uid='config_deactivated_clear_management_ip',
+        )
+        config_deactivated.connect(
+            DeviceChecksumView.invalidate_get_device_cache_on_config_deactivated,
+            dispatch_uid='config_deactivated_invalidate_get_device_cache',
+        )
+        config_deactivating.connect(
+            DeviceChecksumView.invalidate_checksum_cache,
+            dispatch_uid='config_deactivated_invalidate_get_device_cache',
+        )
         config_modified.connect(
             DeviceChecksumView.invalidate_checksum_cache,
             dispatch_uid='invalidate_checksum_cache',
@@ -359,11 +384,15 @@ class ConfigConfig(AppConfig):
                     'applied': '#267126',
                     'modified': '#ffb442',
                     'error': '#a72d1d',
+                    'deactivating': '#353c44',
+                    'deactivated': '#000',
                 },
                 'labels': {
                     'applied': _('applied'),
                     'modified': _('modified'),
                     'error': _('error'),
+                    'deactivating': _('deactivating'),
+                    'deactivated': _('deactivated'),
                 },
             },
         )

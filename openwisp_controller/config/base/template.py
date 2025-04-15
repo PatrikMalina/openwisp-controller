@@ -6,6 +6,7 @@ from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
 from jsonfield import JSONField
+from netjsonconfig.exceptions import ValidationError as NetjsonconfigValidationError
 from swapper import get_model_name
 from taggit.managers import TaggableManager
 
@@ -105,23 +106,31 @@ class AbstractTemplate(ShareableOrgMixinUniqueName, BaseConfig):
         verbose_name_plural = _('templates')
         unique_together = (('organization', 'name'),)
 
-    def save(self, *args, **kwargs):
+    @classmethod
+    def pre_save_handler(cls, instance, *args, **kwargs):
         """
-        modifies status of related configs
-        if key attributes have changed (queries the database)
+        Modifies status of related configs
         """
-        update_related_config_status = False
-        if not self._state.adding:
-            if hasattr(self, 'backend_instance'):
-                del self.backend_instance
-            current = self.__class__.objects.get(pk=self.pk)
-            update_related_config_status = self.checksum != current.checksum
-        # save current changes
-        super().save(*args, **kwargs)
-        # update relations
-        if update_related_config_status:
+        try:
+            current = cls.objects.get(id=instance.id)
+        except cls.DoesNotExist:
+            return
+        if hasattr(instance, 'backend_instance'):
+            del instance.backend_instance
+        try:
+            current_checksum = current.checksum
+        except NetjsonconfigValidationError:
+            # If the Netjsonconfig library upgrade changes the schema,
+            # the old configuration may become invalid, raising an exception.
+            # Setting the checksum to None forces related configurations to update.
+            current_checksum = None
+        instance._update_related_config_status = instance.checksum != current_checksum
+
+    @classmethod
+    def post_save_handler(cls, instance, created, *args, **kwargs):
+        if not created and getattr(instance, '_update_related_config_status', False):
             transaction.on_commit(
-                lambda: update_template_related_config_status.delay(self.pk)
+                lambda: update_template_related_config_status.delay(instance.pk)
             )
 
     def _update_related_config_status(self):

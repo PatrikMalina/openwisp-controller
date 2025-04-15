@@ -11,7 +11,6 @@ from swapper import load_model
 
 from openwisp_utils.tests import capture_any_output, catch_signal
 
-from ...tests.utils import TransactionTestMixin
 from .. import settings as app_settings
 from ..commands import (
     COMMANDS,
@@ -888,7 +887,7 @@ HZAAAAgAhZz8ve4sK9Wbopq43Cu2kQDgX4NoA6W+FCmxCKf5AhYIzYQxIqyCazd7MrjCwS""",
             self.assertIn(command.connection, [dc1, dc2])
 
 
-class TestModelsTransaction(TransactionTestMixin, BaseTestModels, TransactionTestCase):
+class TestModelsTransaction(BaseTestModels, TransactionTestCase):
     def _prepare_conf_object(self, organization=None):
         if not organization:
             organization = self._create_org(name='org1')
@@ -933,7 +932,10 @@ class TestModelsTransaction(TransactionTestMixin, BaseTestModels, TransactionTes
     def test_device_config_update(self, mocked_sleep, mocked_connect):
         def _assert_version_check_command(mocked_exec):
             args, _ = mocked_exec.call_args_list[0]
-            self.assertEqual(args[0], 'openwisp_config --version')
+            self.assertEqual(
+                args[0],
+                '(openwisp-config --version || openwisp_config --version) 2>/dev/null',
+            )
 
         def _assert_applying_conf_test_command(mocked_exec):
             args, _ = mocked_exec_command.call_args_list[1]
@@ -944,7 +946,7 @@ class TestModelsTransaction(TransactionTestMixin, BaseTestModels, TransactionTes
 
         conf = self._prepare_conf_object()
 
-        with self.subTest('Unable to get openwisp_config version'):
+        with self.subTest('Unable to get openwisp-config version'):
             with mock.patch(_exec_command_path) as mocked_exec_command:
                 mocked_exec_command.return_value = self._exec_command_return_value(
                     exit_code=1
@@ -1118,12 +1120,12 @@ class TestModelsTransaction(TransactionTestMixin, BaseTestModels, TransactionTes
                 organization=org, name='device3', mac_address='33:33:33:33:33:33'
             )
         )
-        with self.assertNumQueries(31):
+        with self.assertNumQueries(32):
             credential = self._create_credentials(auto_add=True, organization=org)
         self.assertEqual(credential.deviceconnection_set.count(), 3)
 
         with mock.patch.object(Credentials, 'chunk_size', 2):
-            with self.assertNumQueries(33):
+            with self.assertNumQueries(35):
                 credential = self._create_credentials(
                     name='Mocked Credential', auto_add=True, organization=org
                 )

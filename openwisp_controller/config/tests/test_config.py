@@ -333,6 +333,11 @@ class TestConfig(
         c.refresh_from_db()
         self.assertDictEqual(c.config, {'general': {}})
 
+        with self.subTest('missing name shall not raise exception'):
+            c.device.name = None
+            del c.backend_instance
+            self.assertDictEqual(c.backend_instance.config, {'general': {}})
+
     def test_config_context(self):
         config = {
             'general': {
@@ -423,6 +428,16 @@ class TestConfig(
         vpnclient = c.vpnclient_set.first()
         self.assertIsNotNone(vpnclient)
         self.assertNotEqual(c.vpnclient_set.count(), 0)
+
+    def test_deleting_template_deletes_vpnclient(self):
+        template = self._create_template(
+            name='test-network', type='vpn', vpn=self._create_vpn(), default=True
+        )
+        config = self._create_config(device=self._create_device())
+        self.assertEqual(config.vpnclient_set.count(), 1)
+        template.delete()
+        self.assertEqual(config.templates.count(), 0)
+        self.assertEqual(config.vpnclient_set.count(), 0)
 
     def test_multiple_vpn_clients(self):
         vpn1 = self._create_vpn(name='vpn1')
@@ -518,6 +533,22 @@ class TestConfig(
         with self.subTest("Ensure no additional VpnClients are created"):
             self.assertEqual(c.vpnclient_set.count(), 1)
             self.assertEqual(c.vpnclient_set.first(), vpnclient)
+
+    def test_auto_cert_not_deleted_on_device_deactivation(self):
+        self._create_template(type='vpn', vpn=self._create_vpn(), default=True)
+        config = self._create_config(organization=self._get_org())
+        self.assertEqual(config.templates.count(), 1)
+        cert = config.vpnclient_set.first().cert
+        self.assertEqual(cert.revoked, False)
+
+        config.deactivate()
+        config.refresh_from_db()
+        # Since it is possible to refresh the cert object from the
+        # database, it means that the cert object is not deleted.
+        cert.refresh_from_db()
+        self.assertEqual(config.status, 'deactivating')
+        self.assertEqual(config.templates.count(), 0)
+        self.assertEqual(cert.revoked, True)
 
     def _get_vpn_context(self):
         self.test_create_cert()
@@ -665,7 +696,7 @@ class TestConfig(
             else:
                 self.assertIn('# path: /etc/vpnserver1', result)
 
-        config.device.delete()
+        config.device.delete(check_deactivated=False)
         config.delete()
         with self.subTest('Test template applied after creating config object'):
             config = self._create_config(organization=org)
