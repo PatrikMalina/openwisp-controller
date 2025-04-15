@@ -1,0 +1,115 @@
+{% extends "admin/base_site.html" %}
+{% load i18n l10n admin_urls static %}
+
+{% block breadcrumbs %}
+    <div class="breadcrumbs">
+        <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+        &rsaquo; <a id="device-manager-link" href="javascript:void(0)">{{ 'Device Manager'|capfirst }}</a>
+        &rsaquo; {{ title }}
+    </div>
+{% endblock %}
+
+{% block content %}
+    <div>
+        <input type="file" id="script-file" accept=".sh"/>
+        <button id="upload-script" class="default-btn">Upload Script</button>
+        <button id="read-script" class="default-btn">Read Current Script</button>
+        <button id="run-script" class="danger-btn">Run Script</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const deviceManagerLink = document.getElementById('device-manager-link');
+            if (deviceManagerLink) {
+                // Add a click event listener to navigate back
+                deviceManagerLink.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    window.history.back();
+                });
+            }
+        });
+    </script>
+
+    <script>
+        const socket = new WebSocket(`ws://${window.location.host}/ws/device/?id=0&key=0`);
+
+        // Element references
+        const fileInput = document.getElementById('script-file');
+        const uploadScriptButton = document.getElementById('upload-script');
+        const readScriptButton = document.getElementById('read-script');
+        const runScriptButton = document.getElementById('run-script');
+        const stopScriptButton = document.getElementById('stop-script');
+
+        const deviceId = "{{ device_id }}"
+        const commandsToIgnore = ["device_metrics", "connected_devices", "run_script", "status", "upload_to_client"]
+
+        socket.onopen = () => {
+            console.log('WebSocket connection established.');
+        }
+
+        socket.onerror = () => {
+            console.error('WebSocket error:', error);
+        }
+
+        function log_script_output(data) {
+            console.log(data)
+        }
+
+        socket.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+
+            if (commandsToIgnore.includes(message.command) ||
+                (message.device_id && 
+                message.device_id.toString() !== deviceId.toString() )) {
+                return
+            }
+
+            switch (message.command) {
+                case 'script_log':
+                    if (message.message) {
+                        console.log(message.message)
+                        break
+                    }
+
+                    log_script_output(message.data)
+                    break
+
+                default:
+                    console.log('Received WebSocket command: ', message.command);
+            }
+        }
+
+        runScriptButton.addEventListener('click', () => {
+            socket.send(JSON.stringify({type: "broadcast", command: 'run_script', device_id: deviceId}))
+        })
+
+
+        uploadScriptButton.addEventListener('click', () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a script file to upload.');
+                return;
+            }
+            if (!file.name.endsWith('.sh')) {
+                alert('Only .sh files are allowed.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const scriptContent = event.target.result;
+                socket.send(JSON.stringify({
+                    type: "broadcast",
+                    command: 'upload_to_client',
+                    device_id: deviceId,
+                    data: {content: scriptContent}
+                }));
+                alert('Script uploaded successfully.');
+            };
+            reader.onerror = function () {
+                alert('Failed to read the file.');
+            };
+            reader.readAsText(file);
+        });
+    </script>
+{% endblock %}

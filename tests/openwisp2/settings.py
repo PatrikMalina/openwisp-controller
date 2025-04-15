@@ -45,6 +45,8 @@ INSTALLED_APPS = [
     'openwisp_controller.subnet_division',
     'openwisp_notifications',
     'openwisp_ipam',
+    'device_manager',
+    'wifi_lab',
     # openwisp2 admin theme
     # (must be loaded here)
     'openwisp_utils.admin_theme',
