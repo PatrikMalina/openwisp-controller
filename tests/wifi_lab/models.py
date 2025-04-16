@@ -21,10 +21,10 @@ class LabExercise(models.Model):
 class LabExerciseDevice(models.Model):
     lab_exercise = models.ForeignKey(LabExercise, on_delete=models.CASCADE, related_name='devices')
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.PositiveIntegerField()
+    object_id = models.TextField()
     device = GenericForeignKey('content_type', 'object_id')
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.lab_exercise.name} - {self.device}"
+        return str(self.device)

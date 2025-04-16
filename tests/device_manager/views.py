@@ -8,6 +8,18 @@ site_title = 'OpenWISP Admin'
 
 
 def device_manager(request):
+    from wifi_lab.models import LabExercise, LabExerciseDevice
+    from device_manager.models import Device
+    from django.contrib.contenttypes.models import ContentType
+    le = LabExercise.objects.get(name='wep')
+    device = Device.objects.first()
+    ct = ContentType.objects.get_for_model(Device)
+
+    LabExerciseDevice.objects.create(
+        lab_exercise=le,
+        content_type=ct,
+        object_id=device.id
+    )
     return render(request, 'device_manager/home.html', {'title': 'Connected Devices', 'site_title': site_title})
 
 
