@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'openwisp_ipam',
     'device_manager',
     'wifi_lab',
+    'script_manager',
     # openwisp2 admin theme
     # (must be loaded here)
     'openwisp_utils.admin_theme',

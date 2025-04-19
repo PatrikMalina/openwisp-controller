@@ -6,8 +6,19 @@ from channels.generic.websocket import WebsocketConsumer
 from channels.layers import get_channel_layer
 
 from device_manager.models import Device
+from wifi_lab.models import LabExercise, LabExerciseDeviceStatus, LabExerciseDevice
 
 connected_devices_cache = set()
+
+
+def send_to_specific_device(device_id, message):
+    async_to_sync(get_channel_layer().group_send)(
+        f"device_{device_id}",
+        {
+            "type": "send_message",
+            "message": message,
+        }
+    )
 
 
 def broadcast_message(data):
@@ -61,6 +72,7 @@ class DeviceConsumer(WebsocketConsumer):
             else:
                 self.accept()
                 async_to_sync(get_channel_layer().group_add)("connected_devices", self.channel_name)
+                async_to_sync(get_channel_layer().group_add)(f"device_{self.device_id}", self.channel_name)
                 connected_devices_cache.add(self.device_id)
 
                 self.notify_device_status("connected")
@@ -82,6 +94,38 @@ class DeviceConsumer(WebsocketConsumer):
 
         self.close()
 
+    def on_device_config_status(self, data):
+        success = data.get('success', False)
+        lab_id = data.get('lab_id', None)
+
+        if lab_id:
+            lab = LabExercise.objects.get(id=lab_id)
+
+            if lab.status == LabExercise.Status.ERROR:
+                return
+
+            lab_device = lab.devices.filter(
+                lab_exercise_id=lab.pk,
+                object_id=self.device_id,
+            ).get()
+
+            lab_device.configuration_status = LabExerciseDeviceStatus.APPLIED if success else LabExerciseDeviceStatus.ERROR
+            lab_device.save()
+
+            if not success:
+                lab.status = LabExercise.Status.ERROR
+                lab.save()
+
+                return
+
+            all_applied = not LabExerciseDevice.objects.filter(
+                lab_exercise_id=lab_id
+            ).exclude(configuration_status=LabExerciseDeviceStatus.APPLIED).exists()
+
+            if all_applied:
+                lab.status = LabExercise.Status.ACTIVE
+                lab.save()
+
     def receive(self, text_data):
         try:
             message = json.loads(text_data)
@@ -91,6 +135,9 @@ class DeviceConsumer(WebsocketConsumer):
 
             elif message.get("command") == "device_info":
                 self.send_current_device_metrics(message.get("data"))
+
+            elif message.get("command") == "device_config_status":
+                self.on_device_config_status(message.get("data"))
 
             else:
                 print("Received command: ", message.get("command"))
