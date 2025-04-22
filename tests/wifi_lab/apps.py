@@ -12,7 +12,7 @@ def register_laboratory_menu():
             'icon': 'ow-device',
             'items': {
                 1: {
-                    'label': _('Lab Exercises'),  # Label displayed in the menu
+                    'label': _('Laboratory Exercises'),  # Label displayed in the menu
                     'url': '/admin/wifi_lab/labexercise/',  # URL to the admin changelist page
                     'name': 'labexercise',  # A unique identifier for this menu item
                     'icon': 'ow-device',  # Optional icon class (from OpenWISP themes)
@@ -24,8 +24,8 @@ def register_laboratory_menu():
                     'icon': 'ow-template',
                 },
                 3: {
-                    'label': _('Custom clients'),
-                    'url': '/admin/device_manager/device',
+                    'label': _('Custom Clients'),
+                    'url': '/admin/device_manager/device/',
                     'name': 'customdevice',
                     'icon': 'ow-device',
                 }
