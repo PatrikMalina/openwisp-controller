@@ -4,7 +4,11 @@ from django.contrib import messages
 from django.contrib.admin import TabularInline
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
-from django.db import transaction, OperationalError
+from django.db import transaction
+from django.db.models import Q
+from django.shortcuts import redirect
+from django.urls import path, reverse
+from django.utils.html import format_html
 from django.utils.translation import ngettext
 from swapper import load_model
 
@@ -17,77 +21,117 @@ Config = load_model('config', 'Config')
 Template = load_model('config', 'Template')
 
 
-@admin.action(description='Start selected labs')
-def start_lab(modeladmin, request, queryset):
-    updated = queryset.count()
-    openwisp_type = ContentType.objects.get_for_model(OpenWISPDevice)
+def update_lab(modeladmin, request, queryset, is_start):
+    updated = 0
+    device_type = ContentType.objects.get_for_model(OpenWISPDevice)
 
-    try:
-        with transaction.atomic():
-            for lab in queryset:
-                lab.status = LabExercise.Status.PENDING
-                lab.save(update_fields=['status'])
-
-                lab_devices = lab.devices.filter(
-                    content_type=openwisp_type,
-                    configuration_template__isnull=False
+    with transaction.atomic():
+        for lab in queryset:
+            if is_start:
+                devices = LabExerciseDevice.objects.filter(
+                    lab_exercise_id=lab.id
                 )
 
-                lab_devices.update(configuration_status=LabExerciseDeviceStatus.PENDING)
+                ids = devices.values_list('object_id', flat=True)
 
-                for lab_device in lab_devices:
-                    device = lab_device.device
-                    template = lab_device.configuration_template
+                if len(ids) == 0:
+                    modeladmin.message_user(
+                        request,
+                        f"Cannot start laboratory \"{lab.name}\": No device connected to laboratory.",
+                        level=messages.ERROR
+                    )
+                    continue
 
-                    config, created = Config.objects.get_or_create(device=device)
+                has_conf = devices.filter(Q(script__isnull=False) | Q(configuration_template__isnull=False)).exists()
 
+                if not has_conf:
+                    modeladmin.message_user(
+                        request,
+                        f"Cannot start laboratory \"{lab.name}\": At least one devices has to have configuration.",
+                        level=messages.ERROR
+                    )
+                    continue
+
+                conflict_labs = LabExerciseDevice.objects.filter(
+                    object_id__in=ids,
+                    lab_exercise__status__in=[
+                        LabExercise.Status.PENDING,
+                        LabExercise.Status.ACTIVE,
+                    ]
+                )
+
+                if conflict_labs.exists():
+                    count = lab.devices.count()
+                    modeladmin.message_user(
+                        request,
+                        ngettext(
+                            f"Cannot start laboratory \"{lab.name}\": Device in that laboratory is already in use by other active or pending laboratory.",
+                            f"Cannot start laboratory \"{lab.name}\": Devices in that laboratory are already in use by other active or pending laboratory.",
+                            count
+                        ),
+                        level=messages.ERROR
+                    )
+                    continue
+
+            lab.status = LabExercise.Status.PENDING
+            lab.save(update_fields=['status'])
+
+            lab_devices = lab.devices.filter(
+                content_type=device_type,
+                configuration_template__isnull=False
+            )
+
+            lab_devices.update(configuration_status=LabExerciseDeviceStatus.PENDING)
+
+            for lab_device in lab_devices:
+                device = lab_device.device
+                template = lab_device.configuration_template
+
+                config, created = Config.objects.get_or_create(device=device)
+
+                if is_start:
                     config.templates.add(template)
-                    lab_device.configuration_status = LabExerciseDeviceStatus.PENDING
-                    lab_device.save()
+                else:
+                    config.templates.remove(template)
 
+                lab_device.configuration_status = LabExerciseDeviceStatus.PENDING
+                lab_device.save()
+
+            updated += 1
+
+    return updated
+
+
+@admin.action(description='Start selected labs')
+def start_lab(modeladmin, request, queryset):
+    updated = update_lab(modeladmin, request, queryset, True)
+
+    if updated > 0:
         modeladmin.message_user(
             request,
             ngettext(
-                '%d lab is starting.',
-                '%d labs are starting.',
+                '%d laboratory is starting.',
+                '%d laboratory\'s are starting.',
                 updated,
             ) % updated,
             messages.SUCCESS
         )
 
-    except OperationalError:
-        modeladmin.message_user(
-            request,
-            "Database is locked. Please try again later.",
-            messages.ERROR
-        )
-
 
 @admin.action(description='Stop selected labs')
 def stop_lab(modeladmin, request, queryset):
-    updated = queryset.update(status=LabExercise.Status.INACTIVE)
+    updated = update_lab(modeladmin, request, queryset, False)
 
-    for lab in queryset:
-        for lab_device in lab.devices.all():
-            if lab_device.content_type.model_class() == OpenWISPDevice and lab_device.configuration_template:
-                device = lab_device.device
-                template = lab_device.configuration_template
-
-                try:
-                    config = Config.objects.get(device=device)
-                    config.templates.remove(template)
-                except Config.DoesNotExist:
-                    pass  # If no config exists, just skip
-
-    modeladmin.message_user(
-        request,
-        ngettext(
-            '%d lab is stopping.',
-            '%d labs are stopping.',
-            updated,
-        ) % updated,
-        messages.SUCCESS
-    )
+    if updated > 0:
+        modeladmin.message_user(
+            request,
+            ngettext(
+                '%d laboratory is stopping.',
+                '%d laboratory\'s are stopping.',
+                updated,
+            ) % updated,
+            messages.SUCCESS
+        )
 
 
 @admin.register(ContentType)
@@ -95,7 +139,7 @@ class ContentTypeAdmin(admin.ModelAdmin):
     search_fields = ['model']
 
 
-class LabExerciseDeviceInlineForm(forms.ModelForm):
+class InlineForm(forms.ModelForm):
     device_selector = forms.ChoiceField(
         required=True,
         label="Device",
@@ -132,29 +176,26 @@ class LabExerciseDeviceInlineForm(forms.ModelForm):
                 elif model == OpenWISPDevice:
                     used_openwisp_ids.append(str(device.object_id))
 
-        custom_devices = Device.objects.exclude(id__in=used_custom_ids)
-        openwisp_devices = OpenWISPDevice.objects.exclude(id__in=used_openwisp_ids)
-
-        custom = [
+        device_choices = [
             (f"custom_{device.id}", f"{device.name} (Custom Device)")
-            for device in custom_devices
+            for device in Device.objects.exclude(id__in=used_custom_ids)
         ]
 
-        openwisp = [
+        device_choices += [
             (f"openwisp_{device.id}", f"{device.name} (OpenWRT Device)")
-            for device in openwisp_devices
+            for device in OpenWISPDevice.objects.exclude(id__in=used_openwisp_ids)
         ]
 
-        self.fields['device_selector'].choices = [('', '---------')] + custom + openwisp
+        self.fields['device_selector'].choices = [('', '---------')] + device_choices
         self.fields['device_selector'].widget.attrs.update({'class': 'device-selector'})
 
-        script_choices = [
+        configuration_choices = [
             (f"script_{script.id}", f"{script.name} (Script)") for script in ScriptRecord.objects.all()
         ]
-        template_choices = [
+        configuration_choices += [
             (f"template_{template.id}", f"{template.name} (Template)") for template in Template.objects.all()
         ]
-        all_choices = [('', '---------')] + script_choices + template_choices
+        all_choices = [('', '---------')] + configuration_choices
         self.fields['configuration_selector'].choices = all_choices
         self.fields['configuration_selector'].widget.attrs.update({'class': 'configuration-selector'})
 
@@ -215,21 +256,21 @@ class LabExerciseDeviceInlineForm(forms.ModelForm):
         return cleaned_data
 
 
-class LabExerciseDeviceInline(TabularInline):
+class Inline(TabularInline):
     model = LabExerciseDevice
-    form = LabExerciseDeviceInlineForm
+    form = InlineForm
     extra = 0
     can_delete = True
 
 
-class ReadonlyLabExerciseDeviceInline(admin.TabularInline):
+class ReadonlyInline(admin.TabularInline):
     model = LabExerciseDevice
     can_delete = False
     extra = 0
     verbose_name_plural = "Devices in this Lab"
 
-    readonly_fields = ['device_display', 'configuration']
-    fields = ['device_display', 'configuration']  # Show only these columns
+    readonly_fields = ['device_display', 'configuration', 'configuration_status']
+    fields = ['device_display', 'configuration', 'configuration_status']  # Show only these columns
 
     def has_add_permission(self, request, obj=None):
         return False
@@ -255,10 +296,47 @@ class ReadonlyLabExerciseDeviceInline(admin.TabularInline):
 
 @admin.register(LabExercise)
 class LabExerciseAdmin(admin.ModelAdmin):
-    list_display = ['name', 'status', 'description', 'created_at']
+    list_display = ['name', 'status', 'description', 'created_at', 'action_button']
     search_fields = ['name', 'description']
     readonly_fields = ['status']
+    exclude = ['previous_status']
     actions = [start_lab, stop_lab]
+
+    def get_urls(self):
+        urls = [
+            path('<int:lab_id>/start/', self.admin_site.admin_view(self.start_lab), name='labexercise-start'),
+            path('<int:lab_id>/stop/', self.admin_site.admin_view(self.stop_lab), name='labexercise-stop'),
+        ]
+
+        return urls + super().get_urls()
+
+    def start_lab(self, request, lab_id):
+        lab = LabExercise.objects.get(pk=lab_id)
+        start_lab(self, request, LabExercise.objects.filter(pk=lab.pk))
+        return redirect(request.META.get('HTTP_REFERER', '/admin/'))
+
+    def stop_lab(self, request, lab_id):
+        lab = LabExercise.objects.get(pk=lab_id)
+        stop_lab(self, request, LabExercise.objects.filter(pk=lab.pk))
+        return redirect(request.META.get('HTTP_REFERER', '/admin/'))
+
+    def action_button(self, obj):
+        if obj.status == LabExercise.Status.INACTIVE:
+            url = reverse('admin:labexercise-start', args=[obj.pk])
+            return format_html(
+                '<a class="button green" title="Start Laboratory" href="{}">'
+                '<span style="margin-right: 4px;">▶</span>Start</a>',
+                url
+            )
+        else:
+            url = reverse('admin:labexercise-stop', args=[obj.pk])
+            return format_html(
+                '<a class="button red" title="Stop Laboratory" href="{}">'
+                '<span style="margin-right: 4px;">■</span>Stop</a>',
+                url
+            )
+
+    action_button.short_description = 'Action'
 
     def has_change_permission(self, request, obj=None):
         if obj and obj.status != LabExercise.Status.INACTIVE:
@@ -269,9 +347,9 @@ class LabExerciseAdmin(admin.ModelAdmin):
         if not obj:
             return []
         if obj.status == LabExercise.Status.INACTIVE:
-            return [LabExerciseDeviceInline(self.model, self.admin_site)]
+            return [Inline(self.model, self.admin_site)]
         else:
-            return [ReadonlyLabExerciseDeviceInline(self.model, self.admin_site)]
+            return [ReadonlyInline(self.model, self.admin_site)]
 
     def save_formset(self, request, form, formset, change):
         instances = formset.save(commit=False)

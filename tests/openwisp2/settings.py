@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'device_manager',
     'wifi_lab',
     'script_manager',
+    'file_manager',
     # openwisp2 admin theme
     # (must be loaded here)
     'openwisp_utils.admin_theme',
@@ -120,6 +121,21 @@ MEDIA_ROOT = f'{os.path.dirname(BASE_DIR)}/media/'
 
 CORS_ORIGIN_ALLOW_ALL = True
 
+OPENWISP_ADMIN_THEME_LINKS = [
+    {
+        "type": "text/css",
+        "href": "/static/admin/css/openwisp.css",  # Default CSS (keep this)
+        "rel": "stylesheet",
+        "media": "all",
+    },
+    {
+        "type": "text/css",
+        "href": "/static/css/lab-icons.css",
+        "rel": "stylesheet",
+        "media": "all",
+    }
+]
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
@@ -136,6 +152,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'openwisp_utils.admin_theme.context_processor.menu_groups',
                 'openwisp_notifications.context_processors.notification_api_settings',
+                'openwisp_utils.admin_theme.context_processor.admin_theme_settings'
             ],
         },
     }

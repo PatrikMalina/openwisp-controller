@@ -1,3 +1,29 @@
 .inline-related td.original p {
     display: none !important;
 }
+
+a.button {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    text-decoration: none;
+    color: white;
+    font-size: 13px;
+    display: inline-block;
+}
+
+a.button.green {
+    background-color: #28a745;
+}
+
+a.button.green:hover {
+    background-color: #218838;
+}
+
+a.button.red {
+    background-color: #dc3545;
+}
+
+a.button.red:hover {
+    background-color: #c82333;
+}

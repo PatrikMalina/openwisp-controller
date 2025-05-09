@@ -1,12 +1,13 @@
 import json
 
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
+from django.contrib.auth import get_user_model
 from django.http import JsonResponse
 from django.utils.crypto import get_random_string
 from django.views.decorators.csrf import csrf_exempt
+from openwisp_notifications.signals import notify
 from swapper import load_model
 
+from device_manager.consumer import WebclientConsumer, DeviceCommands
 from device_manager.models import Device
 
 OrganizationConfigSettings = load_model('config', 'OrganizationConfigSettings')
@@ -40,15 +41,17 @@ def register_device(request):
             device.save()
 
             message = {
-                "command": "new_device",
+                "command": DeviceCommands.NEW_DEVICE,
                 "data": {
                     "id": device.id
                 }
             }
-            async_to_sync(get_channel_layer().group_send)(
-                "connected_devices",  # WebSocket group name
-                {"type": "send_message", "message": message}
-            )
+
+            WebclientConsumer.send_to_web(message)
+
+            admins = get_user_model().objects.filter(is_superuser=True)
+
+            notify.send(sender=device, type='custom_device_registered', target=device, recipient=admins)
 
         return JsonResponse({'id': device.id, 'key': device.device_key})
     else:

@@ -11,7 +11,10 @@ class DeviceAdmin(admin.ModelAdmin):
     search_fields = ['name', 'mac_address', 'device_key']
 
     class Media:
-        js = (static("custom_device_websocket.js"),)
+        js = (
+            static("custom_device_websocket.js"),
+            "https://cdn.jsdelivr.net/npm/chart.js",
+        )
 
     def get_fields(self, request, obj=None):
         if obj:
