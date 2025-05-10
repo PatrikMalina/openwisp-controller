@@ -1,0 +1,24 @@
+/* https://www.svgrepo.com/svg/479823/flask-4 */
+.icon-laboratory {
+    mask-image: url("../icons/flask.svg");
+    -webkit-mask-image: url("../icons/flask.svg");
+}
+
+/* https://www.svgrepo.com/svg/425506/device-ram-memory */
+.icon-custom-device {
+    mask-image: url("../icons/chip.svg");
+    -webkit-mask-image: url("../icons/chip.svg");
+}
+
+/* https://www.svgrepo.com/svg/502589/code-file */
+.icon-script {
+    mask-image: url("../icons/script.svg");
+    -webkit-mask-image: url("../icons/script.svg");
+}
+
+/* https://www.svgrepo.com/svg/479823/flask-4 */
+.icon-lab-exercise {
+     mask-image: url("../icons/flask.svg");
+    -webkit-mask-image: url("../icons/flask.svg");
+    transform: rotate(40deg);
+}
