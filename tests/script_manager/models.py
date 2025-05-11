@@ -24,11 +24,6 @@ class ScriptRecord(models.Model):
     def __str__(self):
         return self.name
 
-    def delete(self, *args, **kwargs):
-        if self.file and os.path.isfile(self.file.path):
-            os.remove(self.file.path)
-        super().delete(*args, **kwargs)
-
     class Meta:
         verbose_name = "Script record"
         verbose_name_plural = "Script records"

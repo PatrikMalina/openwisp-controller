@@ -1,13 +1,26 @@
+import os
+
 from django.apps import apps
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
 from device_manager.models import Device
+from file_manager.models import FileRecord
+from script_manager.models import ScriptRecord
 from wifi_lab.models import LabExerciseDevice, LabExercise
 
 Config = apps.get_model('config', 'Config')
 OpenWISPDevice = apps.get_model('config', 'Device')
 
+@receiver(post_delete, sender=ScriptRecord)
+def delete_script_file(sender, instance, **kwargs):
+    if instance.file and os.path.isfile(instance.file.path):
+        os.remove(instance.file.path)
+
+@receiver(post_delete, sender=FileRecord)
+def delete_upload_file(sender, instance, **kwargs):
+    if instance.file and os.path.isfile(instance.file.path):
+        os.remove(instance.file.path)
 
 @receiver(post_delete, sender=Device)
 @receiver(post_delete, sender=OpenWISPDevice)
