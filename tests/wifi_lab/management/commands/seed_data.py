@@ -1,47 +1,43 @@
+import os
+
+from django.core.files import File
 from django.core.management.base import BaseCommand
 from swapper import load_model
+
+from script_manager.models import ScriptRecord
 
 
 class Command(BaseCommand):
     help = "Seed the database with initial data."
 
     def handle(self, *args, **kwargs):
-        # path_to_file = 'media/fake_traffic_with_reconnect.sh'
-        # if not os.path.exists(path_to_file):
-        #     raise FileNotFoundError(f"{path_to_file} does not exist")
-        #
-        # with open(path_to_file, 'rb') as f:
-        #     django_file = File(f)
-        #
-        #     record = ScriptRecord(
-        #         name='Traffic with constant reconnect',
-        #         description='This script simulates traffic and reconnects to designated SSID'
-        #     )
-        #     record.file.save('fake_traffic_with_reconnect.sh', django_file, save=True)
-        #
-        # path_to_file = 'media/lab_capture.sh'
-        # if not os.path.exists(path_to_file):
-        #     raise FileNotFoundError(f"{path_to_file} does not exist")
-        #
-        # with open(path_to_file, 'rb') as f:
-        #     django_file = File(f)
-        #     record = ScriptRecord.objects.create(
-        #         name='Wifi capture on SSID: LabCapture',
-        #         description='Script connects to wifi network LabCapture and does analyzation of network and creates .pcap file',
-        #
-        #     )
-        #
-        #     record.file.save('lab_capture.sh', django_file, save=True)
+        path_to_file = 'media/fake_traffic_with_reconnect.sh'
+        if not os.path.exists(path_to_file):
+            raise FileNotFoundError(f"{path_to_file} does not exist")
 
-        # from django.core.management.base import BaseCommand
-        # from openwisp_controller.config.models import Template
-        # from uuid import UUID
-        # from datetime import datetime
-        #
-        # class Command(BaseCommand):
-        #     help = 'Seed OpenWISP Config Templates'
-        #
-        #     def handle(self, *args, **kwargs):
+        with open(path_to_file, 'rb') as f:
+            django_file = File(f)
+
+            record = ScriptRecord(
+                name='Traffic with constant reconnect',
+                description='This script simulates traffic and reconnects to designated SSID'
+            )
+            record.file.save('fake_traffic_with_reconnect.sh', django_file, save=True)
+
+        path_to_file = 'media/lab_capture.sh'
+        if not os.path.exists(path_to_file):
+            raise FileNotFoundError(f"{path_to_file} does not exist")
+
+        with open(path_to_file, 'rb') as f:
+            django_file = File(f)
+            record = ScriptRecord.objects.create(
+                name='Wifi capture on SSID: LabCapture',
+                description='Script connects to wifi network LabCapture and does analyzation of network and creates .pcap file',
+
+            )
+
+            record.file.save('lab_capture.sh', django_file, save=True)
+
         templates = [
             {
                 'name': 'WEP configuration',
@@ -264,7 +260,7 @@ class Command(BaseCommand):
         Template = load_model('config', 'Template')
 
         for t in templates:
-            template, created = Template.objects.update_or_create(
+            Template.objects.update_or_create(
                 name=t['name'],
                 defaults={
                     'backend': t['backend'],
@@ -278,4 +274,3 @@ class Command(BaseCommand):
                     'required': False,
                 }
             )
-            status = "Created" if created else "Updated"
