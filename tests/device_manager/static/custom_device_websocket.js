@@ -166,8 +166,11 @@ document.addEventListener("DOMContentLoaded", function () {
             case "script_log":
                 const logBox = document.getElementById("script-log");
                 if (logBox) {
-                    const timestamp = new Date().toLocaleTimeString();
-                    logBox.value += `[${timestamp}] ${message.data}\n`;
+                    if (message.data.full) {
+                        logBox.value = message.data.text
+                    } else {
+                        logBox.value += `${message.data}\n`;
+                    }
                 }
                 break;
 
@@ -179,6 +182,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
     socket.onopen = function () {
         console.log("WebSocket connected.");
+
+        if (isDetailPage && deviceId) {
+            socket.send(JSON.stringify({
+                command: "script_log",
+                data: deviceId
+            }));
+        }
     };
 
     socket.onerror = function (error) {

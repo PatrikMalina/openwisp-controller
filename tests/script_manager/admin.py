@@ -35,6 +35,9 @@ class FileRecordAdmin(admin.ModelAdmin):
     arp-scan       LAN scanner using ARP packets
     iperf3         Network bandwidth/throughput testing between two hosts
                 </pre>
+                <p style="margin-top: 10px;">
+                If you require additional tools, you have to install them additionally.
+            </p>
             </div>
             '''
         )

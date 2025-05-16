@@ -41,6 +41,26 @@ class WebclientConsumer(WebsocketConsumer):
 
         self.close()
 
+    def receive(self, text_data=None, bytes_data=None):
+        try:
+            message = json.loads(text_data)
+            command = message.get("command")
+            data = message.get("data")
+
+
+            if command == DeviceCommands.SCRIPT_LOG:
+                message = {
+                    "command": DeviceCommands.SCRIPT_LOG,
+                }
+
+                DeviceConsumer.send_to_device(data, message)
+
+            else:
+                print(f"Received command: {command}")
+
+        except json.JSONDecodeError:
+            print("Failed to decode JSON message.")
+
     def send_message(self, event):
         self.send(text_data=json.dumps(event["message"]))
 
