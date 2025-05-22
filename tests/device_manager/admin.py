@@ -37,7 +37,7 @@ class DeviceAdmin(admin.ModelAdmin):
             '''
             <div style="padding: 12px; background-color: #e9f7ef; color: #1e4620; border: 1px solid #c3e6cb; border-radius: 4px;">
                 <strong>Raspberry Pi Device Setup Instructions:</strong><br><br>
-                1. Download the image file: <a href="/media/rpi_backup.img" target="_blank">/media/rpi.img</a><br>
+                1. Download the image file: <a href="/media/raspberry_backup.img.gz" target="_blank">/media/raspberry_backup.img.gz</a><br>
                 2. Flash it to a Raspberry Pi using your preferred tool <code>user: dp</code> and <code>password: dp2023</code><br>
                 3. On the Pi, open <code>rpi-client/settings.py</code><br>
                 4. Set the <code>URL</code> of OpenWISP server and <code>SHARED_SECRET</code> from the Organization<br>
